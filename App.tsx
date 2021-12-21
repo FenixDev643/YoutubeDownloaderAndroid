@@ -8,9 +8,9 @@
  * @format
  */
 
-import React, { useEffect, useState } from 'react';
-import { Image, StyleSheet, Text, TextInput, TouchableOpacity, View,
-PermissionsAndroid, Platform, ActivityIndicator } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { StyleSheet, Text, TextInput, TouchableOpacity, View,
+PermissionsAndroid, Platform, ActivityIndicator, Animated } from 'react-native';
 import ytdl from 'react-native-ytdl'
 import RNFetchBlob from 'rn-fetch-blob'
 import colors from './components/Colors';
@@ -21,52 +21,70 @@ const App = () => {
   // video information //
   const [VideoURL, setVideoURL] = useState('');
   const [videoInfo, setVideoInfo] = useState();
-  var url360:any;
-  var url720:any;
-  var url1080:any;
+                                    // url, format //
+  const [url360, setUrl360] : any = useState([]);
+  const [url720, setUrl720] : any = useState([]);
+  const [url1080,setUrl1080] : any = useState([]);
+  const [urlAudio,setUrlAudio] : any = useState([]);
+  const [currentUrl, setCurrentUrl] = useState('');
+  // video information //
 
-  // download Button //
-  const [DownloadDisabled,setDownloadDisabled] = useState([false,true,true]);
-  const [DownloadColor,setDownloadColor] = useState([colors.mainLight,colors.mainLight,colors.mainLight]);
-  const [DownloadBorderColor,setDownloadBorderColor] = useState([colors.mainLightBorder,colors.mainLightBorder,colors.mainLightBorder]);
+  // animations //
+  const ScaleXanim : any = useRef(new Animated.Value(0)).current;
+  const ScaleX = () => {
+    Animated.spring(ScaleXanim,{
+      toValue:1,
+      friction:2,
+      tension:15,
+      useNativeDriver:true
+    }).start();
+  }
+  const FadeAnim : any = useRef(new Animated.Value(0)).current;
+  const FadeIn = () => {
+    let config : any = {
+      duration: 1000,
+      toValue: 1,
+    }
+    Animated.timing(FadeAnim,config).start();
+  }
+  const LoadAnimations = () => {
+    ScaleX();
+    FadeIn();
+  }
+  LoadAnimations();
+  // animations //
+
+  // download buttons //
+  const [downloadDisabled, setDownloadDisabled] = useState(true);
+  const [showDownloadButtons, setShowDownloadButtons] = useState(false);
   const [LoadingCircle, setLoadingCircle] = useState(false);
-
-  useEffect(() => {
-    DownloadDisabled.map((disabledObject : boolean, disabledIndex :number) => {
-      if(disabledObject){
-        setDownloadColor(DownloadColor.map((object,index: number) => {
-          if(index === disabledIndex){
-            object = colors.mainLight;
-          }
-          return object;
-        }));
-        setDownloadBorderColor(DownloadBorderColor.map((object,index: number) => {
-          if(index === disabledIndex){
-            object = colors.mainLightBorder;
-          }
-          return object;
-        }));
-      }
-      else{
-        setDownloadColor(DownloadColor.map((object,index: number) => {
-          if(index === disabledIndex){
-            object = colors.main;
-          }
-          return object;
-        }));
-        setDownloadBorderColor(DownloadBorderColor.map((object,index: number) => {
-          if(index === disabledIndex){
-            object = colors.mainBorder;
-          }
-          return object;
-        }));
-      }
-    })
-  }, [DownloadDisabled])
+  // download buttons //
 
   // Message Modal //
   const [messageModalVisible,setMessageModalVisible] = useState(false);
   const [messageModalSend, setMessageModalSend] = useState('');
+  // Message Modal //
+
+  // reset all information and buttons //
+  const resetAll = () => {
+    setUrl360([]);
+    setUrl720([]);
+    setUrl1080([]);
+    setUrlAudio([]);
+    setCurrentUrl('');
+    setLoadingCircle(false);
+    setDownloadDisabled(true);
+    setVideoInfo(undefined);
+  }
+  // reset all information and buttons //
+
+  // on change current url //
+  useEffect(() => {
+    if(currentUrl != ''){
+      checkPermission();
+    }
+  }, [currentUrl])
+  // on change current url //
 
   // on change video input //
   const onChangeVideoInput = async (text : any) => {
@@ -75,34 +93,43 @@ const App = () => {
     if(ytdl.validateURL(text)){
       let info = await ytdl.getInfo(text);
       try {
-        url360 = await ytdl(VideoURL, { filter: (format:any) => format.itag === 18 });
-      } catch (error) {}
+        var url360 = await ytdl(text, { filter: (format:any) => format.itag === 18 });
+        var format = 'mp4';
+        setUrl360([url360[0].url,format]);
+      } catch (error) {console.log('error on get 360p version: ', error);}
       try {
-        url720 = await ytdl(VideoURL, { filter: (format:any) => format.itag === 22 });
-      } catch (error) {}
+        var url720 = await ytdl(text, { filter: (format:any) => format.itag === 22 });
+        var format = 'mp4';
+        setUrl720([url720[0].url,format]);
+      } catch (error) {console.log('error on get 720p version: ', error);}
       try {
-        url1080 = await ytdl(VideoURL, { filter: (format:any) => format.itag === 37 });
-      } catch (error) {}
-      setDownloadDisabled([false,true,true]);
+        var url1080 = await ytdl(text, { filter: (format:any) => format.itag === 137 });
+        var format = 'mp4';
+        setUrl1080([url1080[0].url,format]);
+      } catch (error) {console.log('error on get 1080p version: ', error);}
+      try {
+        var urlAudio = await ytdl(text, { filter: 'audioonly' });
+        var format = 'mp3';
+        setUrlAudio([urlAudio[0].url,format]);
+      } catch (error) {console.log('error on get audio version: ', error);}
       setLoadingCircle(false);
+      setDownloadDisabled(false);
       setVideoInfo(info.videoDetails);
     }else{
-      setLoadingCircle(false);
-      setVideoInfo(undefined);
-      setDownloadDisabled([true,true,true]);
+      resetAll();
     }
-    console.log("Download Disabled: ",DownloadDisabled);
   }
+  // on change video input //
 
   // download functions //
-  const checkPermission = async (videoQuality: string) => {
+  const checkPermission = async () => {
     if(Platform.OS === 'ios'){
-      Download(videoQuality);
+      Download();
     } else{
       try {
         const granted = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE);
         if(granted === PermissionsAndroid.RESULTS.GRANTED){
-          Download(videoQuality);
+          Download();
         }else{
           setMessageModalSend('se necesitan permisos de almacenamiento para descargar videos');
           setMessageModalVisible(true);
@@ -113,7 +140,7 @@ const App = () => {
     }
   }
 
-  const Download = async (videoQuality: string) => {
+  const Download = async () => {
     if(!ytdl.validateURL(VideoURL)){
       setMessageModalSend('no se pudo encontrar ningun video con la url que pusiste');
       setMessageModalVisible(true);
@@ -123,35 +150,37 @@ const App = () => {
 
     let info : any = videoInfo;
     let VideoName = info.title;
-    let realURL;
-    if(videoQuality === '360p'){
-      realURL = url360[0].url;
+    let videoResolution;
+    if(currentUrl == url360){
+      videoResolution = '360p';
+    }else if(currentUrl == url720){
+      videoResolution = '(720p HD)';
+    }else if(currentUrl == url1080){
+      videoResolution = '(1080p HD)';
+    }else if(currentUrl == urlAudio){
+      videoResolution = '(Audio 160k)';
     }
-    else if(videoQuality === '720p'){
-      realURL = url720[0].url;
-    }
-    else if(videoQuality === '1080p'){
-      realURL = url1080[0].url;
-    }
+    let format = currentUrl[1];
+    
     const {config, fs} = RNFetchBlob;
-    let DownloadDir = fs.dirs.MovieDir;
+    let DownloadDir = fs.dirs.DownloadDir;
     let options = {
       fileCache: true,
       addAndroidDownloads: {
         useDownloadManager: true,
         notification: true,
-        path: DownloadDir + '/' + VideoName + '.mp4',
+        path: `${DownloadDir}/${VideoName} ${videoResolution}.${format}`,
         description: 'descargando el video'
       }
     }
-    config(options).fetch('GET', realURL).then(res => {
-      setLoadingCircle(false);
+    config(options).fetch('GET', currentUrl[0]).then(res => {
+      resetAll();
 
-      setDownloadDisabled([true,true,true]);
       setMessageModalSend('video descargado correctamente');
       setMessageModalVisible(true);
     })
   }
+  // download functions //
 
   return (
     <View style={styles.container}>
@@ -159,15 +188,15 @@ const App = () => {
       modalVisible={messageModalVisible} message={messageModalSend}/>
 
       {/* Content */}
-      <View style={styles.content}>
+      <View style={[styles.content,{flex: showDownloadButtons ? 2 : 10}]}>
 
         {/* Title */}
         <View style={styles.titleBox}>
-          <Image
-          style={styles.logo}
+          <Animated.Image
+          style={[styles.logo,{transform: [{scaleX: ScaleXanim}]}]}
           source={require('./images/YTlogo.png')}/>
-          <Text 
-          style={[styles.text,styles.title]}>Youtube Downloader</Text>
+          <Animated.Text 
+          style={[styles.text,styles.title,{ opacity: FadeAnim }]}>Youtube Downloader</Animated.Text>
         </View>
         {/* Title */}
 
@@ -179,40 +208,68 @@ const App = () => {
 
         {LoadingCircle ? <ActivityIndicator size="large" color={colors.second} /> : null}
         {videoInfo ? <VideoInfo info={videoInfo}/> : null}
-
-        {/* Download Buttons list */}
-        <View style={styles.downloadList}>
-          <TouchableOpacity
-          style={[styles.button,{borderColor: DownloadBorderColor[0], backgroundColor: DownloadColor[0]}]}
-          disabled={DownloadDisabled[0]}
-          onPress={() => {checkPermission('360p')}}>
-            <Text 
-            style={[styles.text,{fontSize:18}]}>Descargar 360p</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-          style={[styles.button,{borderColor: DownloadBorderColor[1], backgroundColor: DownloadColor[1]}]}
-          disabled={DownloadDisabled[1]}
-          onPress={() => {checkPermission('720p')}}>
-            <Text 
-            style={[styles.text,{fontSize:18}]}>Descargar 720p</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-          style={[styles.button,{borderColor: DownloadBorderColor[2], backgroundColor: DownloadColor[2]}]}
-          disabled={DownloadDisabled[2]}
-          onPress={() => {checkPermission('1080p')}}>
-            <Text 
-            style={[styles.text,{fontSize:18}]}>Descargar 1080p</Text>
-          </TouchableOpacity>
-        </View>
-        {/* Download Buttons list */}
-
         {/* submit */}
 
       </View>
       {/* Content */}
 
+        {/* Download Buttons list */}
+        <Animated.ScrollView 
+        style={[styles.downloadList,
+        {backgroundColor: downloadDisabled ? colors.mainLight : colors.main},
+        {transform: [{scaleX: ScaleXanim}]}]}>
+          <TouchableOpacity
+            style={styles.button}
+            disabled={downloadDisabled}
+            onPress={() => {setShowDownloadButtons(!showDownloadButtons);}}>
+              <Animated.Text
+              style={[styles.text,{fontSize:18, opacity: FadeAnim}]}>Descargar</Animated.Text>
+          </TouchableOpacity>
+          {downloadDisabled == false ? 
+          <>
+            {showDownloadButtons == true ? 
+            <>
+            {url360[0] ? 
+            <TouchableOpacity
+            style={styles.button}
+            disabled={false}
+            onPress={() => setCurrentUrl(url360)}>
+              <Text 
+              style={[styles.text,{fontSize:18}]}>360p</Text>
+            </TouchableOpacity> : null}
+            {url720[0] ? 
+            <TouchableOpacity
+            style={styles.button}
+            disabled={false}
+            onPress={() => setCurrentUrl(url720)}>
+              <Text 
+              style={[styles.text,{fontSize:18}]}>720p HD</Text>
+            </TouchableOpacity>
+            : null}
+            {url1080[0] ? 
+            <TouchableOpacity
+            style={styles.button}
+            disabled={false}
+            onPress={() => setCurrentUrl(url1080)}>
+              <Text 
+              style={[styles.text,{fontSize:18}]}>1080p HD</Text>
+            </TouchableOpacity>
+              : null}
+            {urlAudio[0] ? 
+            <TouchableOpacity
+            style={styles.button}
+            disabled={false}
+            onPress={() => setCurrentUrl(urlAudio)}>
+              <Text 
+              style={[styles.text,{fontSize:18}]}>Audio 160k</Text>
+            </TouchableOpacity>
+              : null}
+            </> 
+            : null}
+          </>
+          : null}
+        </Animated.ScrollView>
+        {/* Download Buttons list */}
     </View>
   );
 };
@@ -224,7 +281,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bg,
     justifyContent: 'center',
     alignItems: 'center',
-    height: '100%'
+    height: '100%',
+    paddingVertical: 20
   },
   content : {
     backgroundColor: colors.bgDark,
@@ -255,21 +313,19 @@ const styles = StyleSheet.create({
   },
   // title //
 
-  // download list //
-  downloadList : {
-    width: '50%',
-    height: '25%',
-    borderRadius: 8,
-    alignItems: 'stretch',
-    justifyContent: 'space-between',
+  downloadList: {
+    flex: 1,
+    width: '90%',
+    borderRadius: 10,
+    marginTop: 10,
   },
-  // download list //
 
   // Defaults //
   text: {fontFamily: 'youtube_font'},
   textInput: {backgroundColor: colors.second, width: '90%', 
   paddingLeft: 10, borderRadius: 8, fontFamily: 'youtube_font', fontSize: 18},
-  button: {padding: 15, borderRadius: 8, borderWidth: 3, alignItems: 'center'}
+  button: {padding: 15,
+    alignItems: 'center',}
   // Defaults //
 })
 
